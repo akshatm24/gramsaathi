@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {ask,retrieve,validateSelection,guideHandle,corpus} from '../netlify/lib/guide.mjs';
+const store=()=>{const m=new Map();return {m,get:async k=>m.get(k)??null,set:async(k,v)=>m.set(k,v),delete:async k=>m.delete(k)}};
+const request=(path,body,method=body?'POST':'GET',token='a'.repeat(64))=>new Request('https://example.netlify.app/api/'+path,{method,headers:{'Content-Type':'application/json','X-Case-Token':token},...(body?{body:JSON.stringify(body)}:{})});
+test('retrieval isolates portal channel, suppresses fees and stale guidance',()=>{const rows=retrieve('how to update address online');assert.ok(rows.length);assert.ok(rows.every(r=>r.channel==='portal'||r.channel==='general'));assert.equal(retrieve('address','portal',Date.now()+31*86400000).length,0);});
+test('only exact retrieved IDs may be returned; duplicate or invented IDs fail',()=>{assert.throws(()=>validateSelection({status:'supported',ids:['made-up']},corpus));assert.throws(()=>validateSelection({status:'supported',ids:[corpus[0].id,corpus[0].id]},corpus));assert.deepEqual(validateSelection({status:'insufficient',ids:[]},corpus),[]);});
+test('private data and fees never reach Gemini',async()=>{const fail=()=>{throw Error('Must not run');};assert.equal((await ask('my number is 123456789012','portal',fail)).status,'private_data');assert.equal((await ask('How much fees for Aadhaar','portal',fail)).status,'insufficient');assert.equal((await ask('PAN name update','portal',fail)).status,'out_of_scope');});
+test('model advice and forged citations fail closed',async()=>{const old=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='test';try{const r=await ask('How to update address online','portal',async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({status:'supported',ids:['invented'],advice:'invented'})}]}}]}));assert.equal(r.status,'unavailable');}finally{if(old)process.env.GEMINI_API_KEY=old;else delete process.env.GEMINI_API_KEY;}});
+test('application requires evidence, consent, document, login, exact fill and current review',async()=>{
+ const s=store(),call=async(path,body,method)=>guideHandle(request(path,body,method),s);
+ assert.equal((await call('journey/start',{consent:true})).status,409);
+ // Seed a previously verified answer, as /guide does after Gemini selection.
+ const {createHash}=await import('node:crypto');const k='aadhaar/'+createHash('sha256').update('a'.repeat(64)).digest('hex');s.m.set(k,JSON.stringify({id:'GS-test',stage:'start',data:{},documents:[],events:[],revision:0,guidance:{canPrepare:true,citations:[corpus[0]]}}));
+ assert.equal((await call('journey/start',{consent:false})).status,400);
+ assert.equal((await call('journey/start',{consent:true})).status,200);
+ const data={name:'Sample Citizen',address:'12 Sample Road',city:'Sample Village',state:'Uttar Pradesh',pin:'208016',documentType:'Sample address proof'};
+ assert.equal((await call('journey/details',{data})).status,200);
+ assert.equal((await call('journey/login',{code:'246810'})).status,409);
+ assert.equal((await call('journey/document',{consent:true,name:'fake.pdf',type:'application/pdf',content:Buffer.from('not PDF').toString('base64')})).status,400);
+ let c=await (await call('journey/document',{consent:true,name:'sample.txt',type:'text/plain',content:Buffer.from('sample').toString('base64')})).json();
+ assert.equal((await call('journey/login',{code:'bad'})).status,400);
+ assert.equal((await call('journey/login',{code:'246810'})).status,200);
+ assert.equal((await call('journey/review',{data:{...data,name:'wrong'},documentId:c.documents[0].id})).status,409);
+ c=await (await call('journey/review',{data,documentId:c.documents[0].id})).json();
+ assert.equal((await call('journey/submit',{consent:false,reviewId:c.review.id})).status,409);
+ const approved=await (await call('journey/submit',{consent:true,reviewId:c.review.id})).json();assert.equal(approved.stage,'complete');
+ const duplicate=await (await call('journey/submit',{consent:true,reviewId:c.review.id})).json();assert.equal(duplicate.receipt.createdAt,approved.receipt.createdAt);
+ await call('journey/details',{data});assert.equal((await call('journey/submit',{consent:true,reviewId:c.review.id})).status,409);
+ assert.equal((await guideHandle(request('journey',null,'GET','b'.repeat(64)),s)).status,200);
+ await call('journey',null,'DELETE');assert.equal((await (await call('journey')).json()).stage,'start');
+});
