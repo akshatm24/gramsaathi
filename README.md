@@ -13,8 +13,22 @@ These components currently run separately. The demonstration portal does not sub
 
 Follow the README in each component. Keep the Gemini API key in a local `.env` file, based on `.env.example`. Never commit secrets or personal documents.
 
-## Hosting
+## Netlify deployment
 
-The existing prototype build targets the Sites Worker runtime, including R2 storage and platform sign-in. It is not a drop-in static Netlify deployment: the server routes, persistent storage and authentication need a Netlify-compatible implementation first. The Python RAG backend also needs its own supported runtime and server-side secret configuration.
+The repository root contains `netlify.toml`. Import this repository and use:
 
-For a local demonstration, use the prototype development server and run the RAG service separately. The existing Sites hosting manifest is omitted from this portable repository; see the component documentation for runtime details.
+- Base directory: blank (repository root)
+- Build command: `npm run build`
+- Publish directory: `dist`
+- Functions directory: `netlify/functions`
+- Node.js: 22
+
+Netlify installs root dependencies automatically. The build copies only the five public frontend assets. Functions handle `/api/*` and persist demonstration cases and documents in Netlify Blobs with strong reads. `/portal` serves the cooperating demonstration portal. Do not publish the repository root, corpus, or Python backend as static assets.
+
+The Netlify version supports device drafts and private access backups; ChatGPT account login is available only on the original Sites host. Account authentication on Netlify needs a separate identity-provider integration. The adapter strips incoming Sites identity headers so visitors cannot impersonate accounts.
+
+The Python RAG service remains separate and is not deployed or connected by this configuration. No Gemini key is needed for the workflow demo. It will need a supported server runtime and server-side secret configuration before integration.
+
+Run `npm install`, `npm run build`, and `npm test` from the repository root. The original Sites build remains available in `gramsaathi-prototype/`.
+
+Only use fictional information in this public demonstration. Blob updates are last-write-wins, so concurrent edits are not transactional. Production needs real authentication, transaction control, rate limits, retention controls and approved service integrations.
