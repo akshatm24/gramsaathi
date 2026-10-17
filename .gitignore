@@ -1,0 +1,11 @@
+**/.env
+**/.env.*
+!**/.env.example
+**/.dev.vars
+**/.local-storage/
+**/__pycache__/
+**/.venv/
+**/node_modules/
+**/dist/
+**/worker/
+.DS_Store

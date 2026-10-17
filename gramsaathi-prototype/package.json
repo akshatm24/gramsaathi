@@ -1,0 +1,1 @@
+{"name":"gramsaathi-prototype","private":true,"type":"module","scripts":{"build":"node scripts/build.mjs","test":"node --test tests/backend.test.mjs","dev":"node scripts/dev.mjs"}}
